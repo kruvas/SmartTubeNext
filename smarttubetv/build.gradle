@@ -71,7 +71,7 @@ android {
     productFlavors {
         stbeta {
             // matchingFallbacks = ['lite']
-            applicationIdSuffix ".beta"
+            applicationIdSuffix ".debug"
         }
         storig {
             // matchingFallbacks = ['lite']
