@@ -124,7 +124,7 @@ public class CustomOverridesRenderersFactory extends DefaultRenderersFactory {
                 out);
 
         if (!Helpers.contains(FRAME_DROP_FIX_LIST, Helpers.getDeviceName())) {
-            return;
+//            return;
         }
 
         Renderer originMediaCodecVideoRenderer = null;
