@@ -51,13 +51,15 @@ public class MotherActivity extends FragmentActivity {
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
 
-        // Fix sudden dpi change.
-        // Could happen when screen goes off or after PIP mode.
-        initDpi();
+        // NOTE: dpi should come after locale update to prevent resources overriding.
 
         // Fix sudden language change.
         // Could happen when screen goes off or after PIP mode.
         LocaleContextWrapper.apply(this, getLocale(this));
+
+        // Fix sudden dpi change.
+        // Could happen when screen goes off or after PIP mode.
+        initDpi();
     }
 
     protected void initTheme() {

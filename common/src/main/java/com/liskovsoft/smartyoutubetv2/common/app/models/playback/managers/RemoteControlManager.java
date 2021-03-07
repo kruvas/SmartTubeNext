@@ -30,6 +30,7 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
     private Disposable mPostPlayAction;
     private Disposable mPostStateAction;
     private Video mVideo;
+    private boolean mConnected;
 
     public RemoteControlManager(Context context, SuggestionsLoader suggestionsLoader) {
         MediaService mediaService = YouTubeMediaService.instance();
@@ -52,7 +53,7 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
 
     @Override
     public void onVideoLoaded(Video item) {
-        postStartPlaying(item, true);
+        postStartPlaying(item, getController().getPlay());
         mVideo = item;
     }
 
@@ -88,23 +89,31 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
     }
 
     private void postStartPlaying(@Nullable Video item, boolean isPlaying) {
-        String videoId = null;
-        long positionMs = -1;
-        long lengthMs = -1;
-
-        if (item != null && getController() != null) {
-            videoId = item.videoId;
-            positionMs = getController().getPositionMs();
-            lengthMs = getController().getLengthMs();
+        if (!mRemoteControlData.isDeviceLinkEnabled()) {
+            return;
         }
 
-        postStartPlaying(videoId, positionMs, lengthMs, isPlaying);
+        String videoId = null;
+        long positionMs = -1;
+        long durationMs = -1;
+
+        if (item != null && getController() != null) {
+            item.isRemote = mConnected;
+
+            videoId = item.videoId;
+            positionMs = getController().getPositionMs();
+            durationMs = getController().getLengthMs();
+        }
+
+        postStartPlaying(videoId, positionMs, durationMs, isPlaying);
     }
 
     private void postStartPlaying(String videoId, long positionMs, long durationMs, boolean isPlaying) {
         if (!mRemoteControlData.isDeviceLinkEnabled()) {
             return;
         }
+
+        RxUtils.disposeActions(mPostPlayAction);
 
         mPostPlayAction = RxUtils.execute(
                 mRemoteManager.postStartPlayingObserve(videoId, positionMs, durationMs, isPlaying)
@@ -115,6 +124,8 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
         if (!mRemoteControlData.isDeviceLinkEnabled()) {
             return;
         }
+
+        RxUtils.disposeActions(mPostStateAction);
 
         mPostStateAction = RxUtils.execute(
                 mRemoteManager.postStateChangeObserve(positionMs, durationMs, isPlaying)
@@ -165,22 +176,36 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
     }
 
     private void processCommand(Command command) {
-        RxUtils.disposeActions(mPostPlayAction, mPostStateAction);
+        if (command.getType() != Command.TYPE_IDLE) {
+            // Seems that there is no robust way to detect a connection. Use carefully!
+            // Add remote queue row to the suggestions.
+            mConnected = command.getType() != Command.TYPE_DISCONNECTED;
+            if (getController() != null && getController().getVideo() != null) {
+                getController().getVideo().isRemote = mConnected;
+            }
+        }
 
         switch (command.getType()) {
             case Command.TYPE_OPEN_VIDEO:
+                if (getController() != null) {
+                    getController().showControls(false);
+                }
+                Utils.movePlayerToForeground(getActivity());
                 Video newVideo = Video.from(command.getVideoId(), command.getPlaylistId(), command.getPlaylistIndex());
                 openNewVideo(newVideo);
                 break;
             case Command.TYPE_UPDATE_PLAYLIST:
                 if (getController() != null) {
                     Video video = getController().getVideo();
-                    video.playlistId = command.getPlaylistId();
-                    mSuggestionsLoader.loadSuggestions(video);
+                    if (video != null) {
+                        video.playlistId = command.getPlaylistId();
+                        mSuggestionsLoader.loadSuggestions(video);
+                    }
                 }
                 break;
             case Command.TYPE_SEEK:
                 if (getController() != null) {
+                    getController().showControls(false);
                     Utils.movePlayerToForeground(getActivity());
                     getController().setPositionMs(command.getCurrentTimeMs());
                     postSeek(command.getCurrentTimeMs());
@@ -192,6 +217,7 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
                 if (getController() != null) {
                     Utils.movePlayerToForeground(getActivity());
                     getController().setPlay(true);
+                    //postStartPlaying(getController().getVideo(), true);
                     postPlay(true);
                 } else {
                     openNewVideo(mVideo);
@@ -201,27 +227,52 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
                 if (getController() != null) {
                     Utils.movePlayerToForeground(getActivity());
                     getController().setPlay(false);
+                    //postStartPlaying(getController().getVideo(), false);
                     postPlay(false);
+                } else {
+                    openNewVideo(mVideo);
+                }
+                break;
+            case Command.TYPE_NEXT:
+                if (getBridge() != null) {
+                    Utils.movePlayerToForeground(getActivity());
+                    getBridge().onNextClicked();
+                } else {
+                    openNewVideo(mVideo);
+                }
+                break;
+            case Command.TYPE_PREVIOUS:
+                if (getBridge() != null && getController() != null) {
+                    Utils.movePlayerToForeground(getActivity());
+                    // Switch immediately. Skip position reset logic.
+                    //getController().setPositionMs(0);
+                    getBridge().onPreviousClicked();
                 } else {
                     openNewVideo(mVideo);
                 }
                 break;
             case Command.TYPE_GET_STATE:
                 if (getController() != null) {
+                    Utils.moveAppToForeground(getActivity());
                     postStartPlaying(getController().getVideo(), getController().isPlaying());
                 } else {
                     postStartPlaying(null, false);
                 }
                 break;
+            case Command.TYPE_VOLUME:
+                Utils.setGlobalVolume(getActivity(), command.getVolume());
+                break;
             case Command.TYPE_CONNECTED:
                 if (getActivity() != null) {
-                    Utils.moveAppToForeground(getActivity());
-                    MessageHelpers.showLongMessage(getActivity(), getActivity().getString(R.string.device_connected, command.getDeviceName()));
+                    // NOTE: It's not a good idea to remember connection state (mConnected) at this point.
+                    //Utils.moveAppToForeground(getActivity());
+                    //MessageHelpers.showLongMessage(getActivity(), getActivity().getString(R.string.device_connected, command.getDeviceName()));
                 }
                 break;
             case Command.TYPE_DISCONNECTED:
                 if (getActivity() != null) {
-                    MessageHelpers.showLongMessage(getActivity(), getActivity().getString(R.string.device_disconnected, command.getDeviceName()));
+                    // NOTE: It's not a good idea to remember connection state (mConnected) at this point.
+                    //MessageHelpers.showLongMessage(getActivity(), getActivity().getString(R.string.device_disconnected, command.getDeviceName()));
                 }
                 break;
         }
@@ -229,12 +280,10 @@ public class RemoteControlManager extends PlayerEventListenerHelper {
 
     private void openNewVideo(Video newVideo) {
         if (Video.equals(mVideo, newVideo) && Utils.isPlayerInForeground(getActivity())) { // same video already playing
-            mVideo.isRemote = true;
             mVideo.playlistId = newVideo.playlistId;
             mVideo.playlistIndex = newVideo.playlistIndex;
             postStartPlaying(mVideo, getController().isPlaying());
         } else if (newVideo != null) {
-            newVideo.isRemote = true;
             PlaybackPresenter.instance(getActivity()).openVideo(newVideo);
         }
     }

@@ -66,6 +66,11 @@ public class StateUpdater extends PlayerEventListenerHelper {
 
     @Override
     public boolean onPreviousClicked() {
+        // Skip auto seek logic when running remote session
+        if (getController().getVideo() != null && getController().getVideo().isRemote) {
+            return false;
+        }
+
         boolean isFarFromStart = getController().getPositionMs() > 10_000;
 
         if (isFarFromStart) {
@@ -112,7 +117,9 @@ public class StateUpdater extends PlayerEventListenerHelper {
     @Override
     public void onEngineReleased() {
         // Save previous state
-        setPlayEnabled(getController().getPlay());
+        if (getController().getLengthMs() > 0) { // contains any media
+            setPlayEnabled(getController().getPlay());
+        }
 
         saveState();
     }
@@ -275,7 +282,8 @@ public class StateUpdater extends PlayerEventListenerHelper {
         }
 
         if (state != null && !item.isLive) {
-            boolean isVideoEnded = Math.abs(getController().getLengthMs() - state.positionMs) < 1_000;
+            long remainsMs = getController().getLengthMs() - state.positionMs;
+            boolean isVideoEnded = remainsMs < 1_000;
             if (!isVideoEnded || !getPlayEnabled()) {
                 getController().setPositionMs(state.positionMs);
             }

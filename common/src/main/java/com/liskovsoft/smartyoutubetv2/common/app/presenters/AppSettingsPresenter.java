@@ -19,10 +19,13 @@ public class AppSettingsPresenter extends BasePresenter<AppSettingsView> {
     @SuppressLint("StaticFieldLeak")
     private static AppSettingsPresenter sInstance;
     private final List<SettingsCategory> mCategories;
+    private final Handler mHandler;
+    private final Runnable mCloseDialog = this::closeDialog;
     private String mTitle;
     private Runnable mOnClose;
     private PlayerUiManager mUiManager;
     private int mEnginePlaybackMode;
+    private long mTimeoutMs;
 
     public static class SettingsCategory {
         public static SettingsCategory radioList(String title, List<OptionItem> items) {
@@ -68,6 +71,7 @@ public class AppSettingsPresenter extends BasePresenter<AppSettingsView> {
     public AppSettingsPresenter(Context context) {
         super(context);
         mCategories = new ArrayList<>();
+        mHandler = new Handler(Looper.getMainLooper());
     }
 
     public static AppSettingsPresenter instance(Context context) {
@@ -103,6 +107,8 @@ public class AppSettingsPresenter extends BasePresenter<AppSettingsView> {
     }
 
     public void clear() {
+        mTimeoutMs = 0;
+        mHandler.removeCallbacks(mCloseDialog);
         mCategories.clear();
     }
 
@@ -141,12 +147,18 @@ public class AppSettingsPresenter extends BasePresenter<AppSettingsView> {
         }
 
         ViewManager.instance(getContext()).startView(AppSettingsView.class, true);
+
+        setupTimeout();
     }
 
     public void closeDialog() {
         if (getView() != null) {
             getView().finish();
         }
+    }
+
+    public boolean isDialogShown() {
+        return !mCategories.isEmpty();
     }
 
     public void appendRadioCategory(String categoryTitle, List<OptionItem> items) {
@@ -177,6 +189,18 @@ public class AppSettingsPresenter extends BasePresenter<AppSettingsView> {
                 getView().finish();
             }
         }, timeoutMs);
+    }
+
+    public void setTimoutMs(long timeoutMs) {
+        mTimeoutMs = timeoutMs;
+    }
+
+    private void setupTimeout() {
+        mHandler.removeCallbacks(mCloseDialog);
+
+        if (mTimeoutMs > 0) {
+            mHandler.postDelayed(mCloseDialog, mTimeoutMs);
+        }
     }
 
     private void blockPlayerEngine(boolean block) {

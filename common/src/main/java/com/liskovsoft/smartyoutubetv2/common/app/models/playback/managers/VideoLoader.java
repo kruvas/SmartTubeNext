@@ -33,6 +33,7 @@ public class VideoLoader extends PlayerEventListenerHelper {
     private final Runnable mReloadVideoHandler = () -> loadVideo(mLastVideo);
     private long mPrevErrorTimeMs;
     private PlayerData mPlayerData;
+    private long mSleepTimerStartMs;
     private final Runnable mPendingNext = () -> {
         if (getController() != null) {
             openVideoFromNext(getController().getVideo(), false);
@@ -42,7 +43,7 @@ public class VideoLoader extends PlayerEventListenerHelper {
     public VideoLoader(SuggestionsLoader suggestionsLoader) {
         mSuggestionsLoader = suggestionsLoader;
         mPlaylist = Playlist.instance();
-        mHandler = new Handler(Looper.myLooper());
+        mHandler = new Handler(Looper.getMainLooper());
     }
 
     @Override
@@ -67,6 +68,7 @@ public class VideoLoader extends PlayerEventListenerHelper {
     public void onEngineInitialized() {
         loadVideo(mLastVideo);
         getController().setRepeatButtonState(mPlayerData.getPlaybackMode());
+        mSleepTimerStartMs = System.currentTimeMillis();
     }
 
     @Override
@@ -80,9 +82,9 @@ public class VideoLoader extends PlayerEventListenerHelper {
 
         // Some ciphered data might be stalled.
         // Might happen when the app wasn't used quite a long time.
-        MessageHelpers.showMessage(getActivity(), R.string.msg_player_error);
+        MessageHelpers.showMessage(getActivity(), R.string.msg_player_error, type);
         YouTubeMediaService.instance().invalidateCache();
-        getController().reloadPlayback(); // properly save position of the current track
+        getController().restartEngine(); // properly save position of the current track
 
         //if (type == PlayerEventListener.ERROR_TYPE_SOURCE ||
         //    type == PlayerEventListener.ERROR_TYPE_RENDERER ||
@@ -120,12 +122,12 @@ public class VideoLoader extends PlayerEventListenerHelper {
 
     @Override
     public void onPlayEnd() {
-        switch (mPlayerData.getPlaybackMode()) {
+        int playbackMode = checkSleepTimer(mPlayerData.getPlaybackMode());
+
+        switch (playbackMode) {
             case PlaybackEngineController.PLAYBACK_MODE_PLAY_ALL:
                 onNextClicked();
-                if (!getController().isInPIPMode()) {
-                    getController().showControls(true);
-                }
+                getController().showControls(true);
                 break;
             case PlaybackEngineController.PLAYBACK_MODE_REPEAT_ONE:
                 //loadVideo(mLastVideo);
@@ -140,27 +142,23 @@ public class VideoLoader extends PlayerEventListenerHelper {
                 break;
             case PlaybackEngineController.PLAYBACK_MODE_PAUSE:
                 // stop player after each video
-                if (!getController().isInPIPMode()) {
-                    getController().showSuggestions(true);
-                }
+                getController().showSuggestions(true);
+                getController().setPlay(false);
                 break;
             case PlaybackEngineController.PLAYBACK_MODE_LIST:
                 // stop player (if not playing playlist)
                 Video video = getController().getVideo();
                 if (video != null && video.playlistId != null) {
                     onNextClicked();
-                    if (!getController().isInPIPMode()) {
-                        getController().showControls(true);
-                    }
+                    getController().showControls(true);
                 } else {
-                    if (!getController().isInPIPMode()) {
-                        getController().showSuggestions(true);
-                    }
+                    getController().showSuggestions(true);
+                    getController().setPlay(false);
                 }
                 break;
         }
 
-        Log.e(TAG, "Undetected repeat mode " + mPlayerData.getPlaybackMode());
+        Log.e(TAG, "Undetected repeat mode " + playbackMode);
     }
 
     @Override
@@ -172,6 +170,24 @@ public class VideoLoader extends PlayerEventListenerHelper {
     public void onRepeatModeClicked(int modeIndex) {
         mPlayerData.setPlaybackMode(modeIndex);
         showBriefInfo(modeIndex);
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode) {
+        mSleepTimerStartMs = System.currentTimeMillis();
+
+        return false;
+    }
+
+    private int checkSleepTimer(int playbackMode) {
+        if (mPlayerData.isSleepTimerEnabled()) {
+            if (System.currentTimeMillis() - mSleepTimerStartMs > 60 * 60 * 1_000) {
+                MessageHelpers.showLongMessage(getActivity(), R.string.player_sleep_timer);
+                playbackMode = PlaybackEngineController.PLAYBACK_MODE_PAUSE;
+            }
+        }
+
+        return playbackMode;
     }
 
     private void showBriefInfo(int modeIndex) {
@@ -293,7 +309,7 @@ public class VideoLoader extends PlayerEventListenerHelper {
 
         if (item.isVideo()) {
             getController().showControls(true);
-            PlaybackPresenter.instance(getActivity()).openVideo(item);
+            PlaybackPresenter.instance(getActivity()).openVideo(item, false);
         } else if (item.isChannel()) {
             ChannelPresenter.instance(getActivity()).openChannel(item);
         } else {

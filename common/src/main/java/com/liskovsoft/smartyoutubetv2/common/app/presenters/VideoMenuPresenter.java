@@ -144,11 +144,11 @@ public class VideoMenuPresenter extends BasePresenter<Void> {
     }
 
     private void appendOpenChannelButton() {
-        if (!mIsOpenChannelButtonEnabled || mVideo == null) {
+        if (!mIsOpenChannelButtonEnabled) {
             return;
         }
 
-        if (mVideo.videoId == null && mVideo.channelId == null) {
+        if (!ChannelPresenter.canOpenChannel(mVideo)) {
             return;
         }
 
@@ -180,6 +180,7 @@ public class VideoMenuPresenter extends BasePresenter<Void> {
                                     error -> Log.e(TAG, "Mark as 'not interested' error: %s", error.getMessage()),
                                     () -> MessageHelpers.showMessage(getContext(), R.string.you_wont_see_this_video)
                             );
+                    mSettingsPresenter.closeDialog();
                 }));
     }
 

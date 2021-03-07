@@ -18,7 +18,7 @@ public class PlaybackPresenter extends BasePresenter<PlaybackView> {
 
     private PlaybackPresenter(Context context) {
         super(context);
-        GlobalPreferences.instance(context); // init MediaService context
+
         mViewManager = ViewManager.instance(context);
         mMainPlayerEventBridge = MainPlayerEventBridge.instance(context);
     }
@@ -47,20 +47,30 @@ public class PlaybackPresenter extends BasePresenter<PlaybackView> {
             return;
         }
 
-        openVideo(Video.from(videoId));
+        openVideo(Video.from(videoId), true);
     }
 
     /**
      * Opens video item from browser, search or channel views
      */
     public void openVideo(Video item) {
+        openVideo(item, true);
+    }
+
+    /**
+     * Opens video item from browser, search or channel views<br/>
+     * Focus player if needed. Useful when running player in PIP mode.
+     */
+    public void openVideo(Video item, boolean focusPlayer) {
         if (item == null) {
             return;
         }
 
         mMainPlayerEventBridge.openVideo(item);
 
-        focusView();
+        if (focusPlayer) {
+            focusView();
+        }
     }
 
     private void focusView() {

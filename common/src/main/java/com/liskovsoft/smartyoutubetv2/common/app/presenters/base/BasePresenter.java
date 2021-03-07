@@ -12,6 +12,8 @@ public abstract class BasePresenter<T> implements Presenter<T> {
     private WeakReference<T> mView = new WeakReference<>(null);
     private WeakReference<Activity> mActivity = new WeakReference<>(null);
     private WeakReference<Context> mApplicationContext = new WeakReference<>(null);
+    private static boolean sIsGlobalDataInitialized;
+    private static boolean sIsGlobalDataInitializedTmp;
 
     public BasePresenter(Context context) {
         setContext(context);
@@ -42,6 +44,8 @@ public abstract class BasePresenter<T> implements Presenter<T> {
 
         // In case view was disposed like SplashView does
         mApplicationContext = new WeakReference<>(context.getApplicationContext());
+
+        initGlobalData();
     }
 
     @Override
@@ -73,5 +77,19 @@ public abstract class BasePresenter<T> implements Presenter<T> {
     @Override
     public void onViewResumed() {
         // NOP
+    }
+
+    private void initGlobalData() {
+        if (sIsGlobalDataInitialized || getContext() == null) {
+            return;
+        }
+
+        boolean isActivity = getContext() instanceof Activity;
+
+        if (isActivity || !sIsGlobalDataInitializedTmp) {
+            Utils.initGlobalData(getContext());
+            sIsGlobalDataInitialized = isActivity;
+            sIsGlobalDataInitializedTmp = !isActivity;
+        }
     }
 }
